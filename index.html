@@ -38,6 +38,7 @@
             clock,
 
             // Particles
+            // 先定义一些粒子相关的公用变量，并且创建了一个粒子对象，用来保存浮动的粒子
             particles = new THREE.Object3D(),
             totalParticles = 200,
             maxParticleSize = 200,
@@ -62,26 +63,33 @@
             camera.position.set(0, 15, 0);
             scene.add(camera);
 
+            /*
+            我们需要一个元素来画场景，这里定义一个renderer，并且给HTML元素webglviewer声明一个变量
+            */
             renderer = new THREE.WebGLRenderer();
             element = renderer.domElement;
             container = document.getElementById('webglviewer');
             container.appendChild(element);
-
+            //为了有VR双屏的视图，需要StereoEffect
             effect = new THREE.StereoEffect(renderer);
 
-            // Our initial control fallback with mouse/touch events in case DeviceOrientation is not enabled
+            /*
+            控制摄像机
+            Our initial control fallback with mouse/touch events in case DeviceOrientation is not enabled
+            (在没有启用DeviceOrientation时，我们使用鼠标/触摸事件进行初始控制)
+            */
             controls = new THREE.OrbitControls(camera, element);
-            controls.target.set(
+            controls.target.set( // “target”设置焦点的位置，即物体围绕的位置
               camera.position.x + 0.15,
               camera.position.y,
               camera.position.z
             );
-            controls.noPan = true;
-            controls.noZoom = true;
+            controls.noPan = true; // 不可平移
+            controls.noZoom = true; // 滚轮不可控制
 
-            // Our preferred controls via DeviceOrientation
-            function setOrientationControls(e) {
-                if (!e.alpha) {
+            // Our preferred controls via DeviceOrientation(我们的首选控制是通过设备定位)
+            function setOrientationControls(e) { // 方向控制
+                if (!e.alpha) { //通过alpha属性来确保监测的是我们需要的事件
                     return;
                 }
 
@@ -89,13 +97,20 @@
                 controls.connect();
                 controls.update();
 
+                //鼠标点击、全屏，这样在google cardboard里看起来效果更好
                 element.addEventListener('click', fullscreen, false);
-
+                //删除deviceorientation事件，因为已经定义了我们自己的DeviceOrientationControls对象
                 window.removeEventListener('deviceorientation', setOrientationControls, true);
             }
+            /*
+            加入设备事件，该事件返回的结果有三个属性
+            上面函数中，如果没有设备支持DeviceOrientation特性，还要给controls变量加上OrbitControls对象，
+            并且使用我们自己的DeviceOrientationControls对象替换它
+            接下来运行connect和update函数
+            */
             window.addEventListener('deviceorientation', setOrientationControls, true);
 
-            // Lighting
+            // 创建灯光
             var light = new THREE.PointLight(0x999999, 2, 100);
             light.position.set(50, 50, 50);
             scene.add(light);
@@ -104,6 +119,7 @@
             lightScene.position.set(0, 5, 0);
             scene.add(lightScene);
 
+            // 创建地板(加载材质)
             var floorTexture = THREE.ImageUtils.loadTexture('textures/wood.jpg');
             floorTexture.wrapS = THREE.RepeatWrapping;
             floorTexture.wrapT = THREE.RepeatWrapping;
@@ -118,46 +134,61 @@
                 map: floorTexture
             });
 
+            // 定义集合体
             var geometry = new THREE.PlaneBufferGeometry(1000, 1000);
 
+            // 在场景里加入地板
             var floor = new THREE.Mesh(geometry, floorMaterial);
             floor.rotation.x = -Math.PI / 2;
             scene.add(floor);
 
+            /*
+            把一个透明的png图”textures/particle.png”初始化为texture
+            上面定义了总粒子数量为totalParticles，如果想增加场景里的粒子数量，可以把这个值增大
+            */
             var particleTexture = THREE.ImageUtils.loadTexture('textures/particle.png'),
                 spriteMaterial = new THREE.SpriteMaterial({
                     map: particleTexture,
                     color: 0xffffff
                 });
-
+            // 遍历粒子并把它们加入到了粒子对象里
             for (var i = 0; i < totalParticles; i++) {
+                // 创建一个Three.js Sprite对象，并把spriteMaterial赋给它
                 var sprite = new THREE.Sprite(spriteMaterial);
-
+                // 把它缩放到64×64（与texture一样大）
                 sprite.scale.set(64, 64, 1.0);
+                // 我们希望粒子是围绕我们出现在随机的位置，所以把它设置有x和y值介于-0.5到0.5之间，z值在-0.75到0.25之间。
                 sprite.position.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.75);
                 sprite.position.setLength(maxParticleSize * Math.random());
-
+                /*
+                让粒子看起来平滑的一个关键点是THREE.AdditiveBlending ，它是Three.js里的弯曲风格。
+                这个会给texture赋给它后面一种texture的颜色，以让整个粒子系统看起来更平滑。
+                */
                 sprite.material.blending = THREE.AdditiveBlending;
 
                 particles.add(sprite);
             }
+            // 我们需要把粒子对象升高以让它旋浮起来
             particles.position.y = 70;
             scene.add(particles);
 
-
+            // 保存时间
             clock = new THREE.Clock();
 
+            // 动起来动起来！
             animate();
         }
 
 
         function animate() {
+            // 我们还需要决定粒子要转动的方向，如果风力小于或等于180，那就顺时针转，否则就逆时针转
             var elapsedSeconds = clock.getElapsedTime(),
                 particleRotationDirection = particleRotationDeg <= 180 ? -1 : 1;
 
+            // 为了在Three.js动画的每一帧真实的旋转它们，我们需要计算动画已经运行了多少秒，乘上速度，这样计算出粒子y值。
             particles.rotation.y = elapsedSeconds * particleRotationSpeed * particleRotationDirection;
 
-            // We check if the color range has changed, if so, we'll change the colours
+            // 还需要跟踪当前的和上次的颜色信息，这样我们知道在哪些帧里改变它们。这里新的光线值介于0.2到0.7之间
             if (lastColorRange[0] != currentColorRange[0] && lastColorRange[1] != currentColorRange[1]) {
 
                 for (var i = 0; i < totalParticles; i++) {
@@ -166,9 +197,9 @@
 
                 lastColorRange = currentColorRange;
             }
-
+            // 循环动画
             requestAnimationFrame(animate);
-
+            // 最后让一切平滑连运动起来
             update(clock.getDelta());
             render(clock.getDelta());
         }
